@@ -1,0 +1,14 @@
+# Additional Python packages for advanced models
+
+# Hidden Markov Models
+hmmlearn>=0.3.0
+
+# Machine Learning (optional for future ML models)
+scikit-learn>=1.3.0
+
+# Deep Learning (optional)
+# tensorflow>=2.13.0
+# torch>=2.0.0
+
+# Time Series Analysis
+arch>=6.2.0              # GARCH models

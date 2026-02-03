@@ -1,0 +1,61 @@
+# Mean Reversion Strategy Configuration
+# All parameters must be defined here - no hardcoding in code
+
+strategy:
+  name: "OU_Mean_Reversion"
+  type: "mean_reversion"
+  
+  # Signal Generation Parameters
+  entry_threshold: 2.0        # Enter when |z-score| > 2.0
+  exit_threshold: 0.5         # Exit when |z-score| < 0.5
+  lookback_period: 252        # 1 year of daily data for calibration
+  recalibration_window: 30    # Recalibrate model every 30 days
+  
+  # Position Sizing
+  max_position_pct: 0.20      # Maximum 20% of portfolio per position
+  target_volatility: 0.15     # Target 15% annualized volatility
+  max_leverage: 1.0           # No leverage
+  
+  # Transaction Costs (basis points)
+  spread_bps: 5.0             # Bid-ask spread
+  commission_bps: 1.0         # Trading commission
+  
+  # Risk Controls
+  stop_loss: 0.02             # Stop loss at 2% per trade
+  max_correlation: 0.7        # Maximum correlation between positions
+
+# Risk Management Configuration
+risk:
+  max_leverage: 1.0           # Maximum gross leverage
+  max_position_pct: 0.30      # Maximum single position size
+  max_drawdown: 0.15          # Stop trading if DD > 15%
+  var_limit: 0.05             # Daily VaR limit (5%)
+  var_method: "historical"    # Options: historical, parametric, monte_carlo
+  var_confidence: 0.95        # 95% VaR
+  
+# Backtesting Configuration
+backtest:
+  start_date: "2020-01-01"
+  end_date: "2025-12-31"
+  initial_capital: 100000.0
+  split_ratio: 0.7            # 70% in-sample, 30% out-of-sample
+  
+  # Walk-forward Analysis
+  walk_forward:
+    enabled: true
+    training_window: 252      # Days for training
+    testing_window: 63        # Days for testing
+    step_size: 21             # Reoptimize every 21 days
+
+# Data Configuration
+data:
+  source: "yahoo"             # Data provider
+  frequency: "daily"          # Data frequency
+  adjustment: "split_adj"     # Adjustment type
+  
+# Logging
+logging:
+  level: "INFO"               # DEBUG, INFO, WARNING, ERROR
+  output_dir: "logs/"
+  save_trades: true
+  save_metrics: true

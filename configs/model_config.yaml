@@ -1,0 +1,53 @@
+# Stochastic Model Configuration
+# Define parameters for different asset classes
+
+ornstein_uhlenbeck:
+  calibration:
+    method: "mle"                  # Maximum Likelihood Estimation
+    bounds:
+      kappa: [0.01, 10.0]          # Mean reversion speed
+      theta: [null, null]          # Long-term mean (unbounded)
+      sigma: [0.001, 5.0]          # Volatility
+  
+  validation:
+    min_half_life: 5               # Minimum half-life in days
+    max_half_life: 250             # Maximum half-life in days
+    stationarity_pvalue: 0.05      # ADF test threshold
+
+geometric_brownian_motion:
+  calibration:
+    method: "mle"
+    bounds:
+      mu: [-0.5, 0.5]              # Drift
+      sigma: [0.001, 2.0]          # Volatility
+  
+  validation:
+    min_sharpe: -2.0               # Minimum acceptable Sharpe ratio
+    max_sharpe: 5.0                # Maximum acceptable Sharpe ratio
+
+jump_diffusion:
+  calibration:
+    method: "mle"
+    bounds:
+      mu: [-0.3, 0.3]              # Diffusion drift
+      sigma: [0.01, 1.0]           # Diffusion volatility
+      lambda_jump: [0.0, 10.0]     # Jump intensity (jumps per year)
+      mu_jump: [-0.5, 0.5]         # Mean jump size
+      sigma_jump: [0.01, 0.5]      # Jump size volatility
+  
+  validation:
+    min_jumps_per_year: 0.5
+    max_jumps_per_year: 50.0
+
+# Model Selection Criteria
+selection:
+  primary_metric: "aic"            # aic, bic, or log_likelihood
+  cross_validation:
+    enabled: true
+    n_folds: 5
+    method: "time_series_split"    # Respect temporal ordering
+  
+  stability_test:
+    enabled: true
+    window_shift: 30               # Test parameter stability across rolling windows
+    max_parameter_drift: 0.3       # Maximum allowed parameter change

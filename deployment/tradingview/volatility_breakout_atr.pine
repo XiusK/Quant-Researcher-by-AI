@@ -1,0 +1,225 @@
+//@version=5
+// ========================================================================
+// Volatility Breakout ATR Strategy - TradingView Pine Script
+// ========================================================================
+// Strategy that won XAUUSD backtest with Sharpe 0.37
+// Developed by Quant Researcher AI
+// 
+// Mathematical Foundation:
+//   - ATR (Average True Range) measures volatility including gaps
+//   - Dynamic channel adapts to market conditions
+//   - Entry: Price breaks above/below channel (2.5 x ATR)
+//   - Exit: Price returns to channel or opposite signal
+//   - Risk Management: Inverse volatility position sizing
+// ========================================================================
+
+strategy("Volatility Breakout ATR", 
+         shorttitle="VB-ATR",
+         overlay=true,
+         initial_capital=100000,
+         default_qty_type=strategy.percent_of_equity,
+         default_qty_value=25,
+         commission_type=strategy.commission.percent,
+         commission_value=0.08,
+         slippage=3)
+
+// ========================================================================
+// INPUT PARAMETERS
+// ========================================================================
+
+// Channel Parameters
+channel_length = input.int(20, "Channel Length (MA Period)", minval=5, maxval=200, 
+                          tooltip="Period for moving average center line")
+atr_period = input.int(14, "ATR Period", minval=1, maxval=50,
+                      tooltip="Period for Average True Range calculation")
+atr_multiplier = input.float(2.5, "ATR Multiplier", minval=0.5, maxval=5.0, step=0.1,tooltip="Channel width = ATR × Multiplier (higher = wider channel)")
+
+// Filter Parameters
+min_volatility = input.float(12.0, "Minimum Volatility (%)", minval=0, maxval=50, step=1.0,tooltip="Minimum annualized volatility to trade (filters low-vol periods)")
+use_vol_filter = input.bool(true, "Enable Volatility Filter",tooltip="Only trade when volatility exceeds minimum threshold")
+
+// Position Sizing
+target_volatility = input.float(15.0, "Target Portfolio Volatility (%)", minval=5, maxval=50, step=1.0,tooltip="Target annualized portfolio volatility for position sizing")
+use_inverse_vol = input.bool(true, "Inverse Volatility Sizing",tooltip="Reduce position size when volatility is high")
+
+// Risk Management
+max_position = input.float(25.0, "Max Position Size (%)", minval=1, maxval=100, step=1.0,tooltip="Maximum percentage of portfolio per trade")
+use_time_exit = input.bool(false, "Enable Time-Based Exit",tooltip="Exit after N bars without momentum")
+time_exit_bars = input.int(5, "Exit After N Bars", minval=1, maxval=20,tooltip="Number of bars to hold before exiting")
+
+// Visual Settings
+show_channel = input.bool(true, "Show Channel Lines")
+show_fills = input.bool(true, "Show Channel Fill")
+show_signals = input.bool(true, "Show Entry/Exit Signals")
+
+// ========================================================================
+// CALCULATIONS
+// ========================================================================
+
+// Calculate ATR
+atr = ta.atr(atr_period)
+
+// Calculate Channel
+channel_middle = ta.sma(close, channel_length)
+channel_upper = channel_middle + (atr_multiplier * atr)
+channel_lower = channel_middle - (atr_multiplier * atr)
+
+// Calculate Realized Volatility (20-day rolling)
+log_returns = math.log(close / close[1])
+realized_vol = ta.stdev(log_returns, 20) * math.sqrt(252) * 100  // Annualized %
+
+// Volatility Filter
+vol_filter_passed = not use_vol_filter or realized_vol >= min_volatility
+
+// Position Sizing (Inverse Volatility)
+position_size_multiplier = 1.0
+if use_inverse_vol and realized_vol > 0
+    position_size_multiplier := math.min(target_volatility / realized_vol, 2.0)
+
+adjusted_position_size = math.min(max_position * position_size_multiplier, max_position)
+
+// Calculate Confidence (distance from band in ATR units)
+distance_from_upper = (close - channel_upper) / atr
+distance_from_lower = (channel_lower - close) / atr
+confidence_long = math.max(distance_from_upper, 0)
+confidence_short = math.max(distance_from_lower, 0)
+
+// Entry Conditions
+long_condition = close > channel_upper and vol_filter_passed
+short_condition = close < channel_lower and vol_filter_passed
+
+// Exit Conditions
+// Exit when price returns to channel
+exit_long = close <= channel_middle or short_condition
+exit_short = close >= channel_middle or long_condition
+
+// Time-based exit
+var int bars_in_trade = 0
+if strategy.position_size != 0
+    bars_in_trade += 1
+else
+    bars_in_trade := 0
+
+time_exit = use_time_exit and bars_in_trade >= time_exit_bars
+
+// ========================================================================
+// STRATEGY EXECUTION
+// ========================================================================
+
+// Enter Long
+if long_condition and strategy.position_size == 0
+    strategy.entry("Long", strategy.long, qty=adjusted_position_size,
+                  comment="LONG @" + str.tostring(close, "#.##"))
+
+// Enter Short
+if short_condition and strategy.position_size == 0
+    strategy.entry("Short", strategy.short, qty=adjusted_position_size,
+                  comment="SHORT @" + str.tostring(close, "#.##"))
+
+// Exit Long
+if (exit_long or time_exit) and strategy.position_size > 0
+    strategy.close("Long", comment="Exit Long @" + str.tostring(close, "#.##"))
+
+// Exit Short
+if (exit_short or time_exit) and strategy.position_size < 0
+    strategy.close("Short", comment="Exit Short @" + str.tostring(close, "#.##"))
+
+// ========================================================================
+// VISUALIZATION
+// ========================================================================
+
+// Plot Channel Lines
+plot(show_channel ? channel_middle : na, "Middle Line", color=color.blue, linewidth=2)
+plot(show_channel ? channel_upper : na, "Upper Band", color=color.green, linewidth=1, style=plot.style_linebr)
+plot(show_channel ? channel_lower : na, "Lower Band", color=color.red, linewidth=1, style=plot.style_linebr)
+
+// Fill Channel
+fill_color = show_fills ? color.new(color.gray, 90) : na
+fill(plot(channel_upper), plot(channel_lower), color=fill_color)
+
+// Plot Entry Signals
+plotshape(show_signals and long_condition ? true : na, 
+         "Long Signal", shape.triangleup, location.belowbar, 
+         color.new(color.green, 0), size=size.small, text="LONG")
+plotshape(show_signals and short_condition ? true : na,
+         "Short Signal", shape.triangledown, location.abovebar,
+         color.new(color.red, 0), size=size.small, text="SHORT")
+
+// Plot Exit Signals
+plotshape(show_signals and exit_long and strategy.position_size > 0 ? true : na,
+         "Exit Long", shape.xcross, location.abovebar,
+         color.new(color.orange, 0), size=size.tiny)
+plotshape(show_signals and exit_short and strategy.position_size < 0 ? true : na,
+         "Exit Short", shape.xcross, location.belowbar,
+         color.new(color.orange, 0), size=size.tiny)
+
+// Color bars based on position
+barcolor(strategy.position_size > 0 ? color.new(color.green, 70) : strategy.position_size < 0 ? color.new(color.red, 70) : na)
+
+// ========================================================================
+// INFORMATION TABLE
+// ========================================================================
+
+var table info_table = table.new(position.top_right, 2, 8, 
+                                 bgcolor=color.new(color.black, 90),
+                                 border_width=2,
+                                 border_color=color.gray)
+
+if barstate.islast
+    // Header
+    table.cell(info_table, 0, 0, "Metric", text_color=color.white, 
+              text_size=size.small, bgcolor=color.new(color.gray, 70))
+    table.cell(info_table, 1, 0, "Value", text_color=color.white,
+              text_size=size.small, bgcolor=color.new(color.gray, 70))
+    
+    // ATR
+    table.cell(info_table, 0, 1, "ATR", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 1, str.tostring(atr, "#.##"), 
+              text_color=color.yellow, text_size=size.small)
+    
+    // Volatility
+    vol_color = realized_vol >= min_volatility ? color.lime : color.red
+    table.cell(info_table, 0, 2, "Realized Vol", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 2, str.tostring(realized_vol, "#.#") + "%",
+              text_color=vol_color, text_size=size.small)
+    
+    // Channel Width
+    channel_width_pct = (channel_upper - channel_lower) / close * 100
+    table.cell(info_table, 0, 3, "Channel Width", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 3, str.tostring(channel_width_pct, "#.#") + "%",
+              text_color=color.aqua, text_size=size.small)
+    
+    // Position Size
+    table.cell(info_table, 0, 4, "Position Size", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 4, str.tostring(adjusted_position_size, "#.#") + "%",
+              text_color=color.orange, text_size=size.small)
+    
+    // Current Position
+    pos_text = strategy.position_size > 0 ? "LONG" : 
+              strategy.position_size < 0 ? "SHORT" : "FLAT"
+    pos_color = strategy.position_size > 0 ? color.lime :
+               strategy.position_size < 0 ? color.red : color.gray
+    table.cell(info_table, 0, 5, "Position", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 5, pos_text, text_color=pos_color, 
+              text_size=size.small, text_font_family=font.family_monospace)
+    
+    // Confidence Score
+    current_confidence = strategy.position_size > 0 ? confidence_long : strategy.position_size < 0 ? confidence_short : 0
+    table.cell(info_table, 0, 6, "Confidence", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 6, str.tostring(current_confidence, "#.##") + "x ATR", text_color=color.yellow, text_size=size.small)
+    
+    // Filter Status
+    filter_text = vol_filter_passed ? "PASS" : "FAIL"
+    filter_color = vol_filter_passed ? color.lime : color.red
+    table.cell(info_table, 0, 7, "Vol Filter", text_color=color.white, text_size=size.small)
+    table.cell(info_table, 1, 7, filter_text, text_color=filter_color, text_size=size.small)
+
+// ========================================================================
+// ALERTS
+// ========================================================================
+
+// Alert conditions
+alertcondition(long_condition, "Long Entry", "XAUUSD: LONG signal - Breakout above {{ticker}} @ {{close}}")
+alertcondition(short_condition, "Short Entry", "XAUUSD: SHORT signal - Breakout below {{ticker}} @ {{close}}")
+alertcondition(exit_long, "Exit Long", "XAUUSD: Exit LONG position @ {{close}}")
+alertcondition(exit_short, "Exit Short", "XAUUSD: Exit SHORT position @ {{close}}")
